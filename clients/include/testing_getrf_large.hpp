@@ -158,8 +158,19 @@ void getrf_large_getError(const rocblas_handle handle,
 
     // execute computations
     // GPU lapack
+    // Enabling logging
+    // initialization
+    rocsolver_log_begin();
+
+    // begin trace logging and profile logging (max depth = 5)
+    rocsolver_log_set_layer_mode(rocblas_layer_mode_log_profile);
+    rocsolver_log_set_max_levels(10);
     CHECK_ROCBLAS_ERROR(rocsolver_getf2_getrf(STRIDED, GETRF, handle, n, n, dA.data(), lda, stA,
                                               dIpiv.data(), stP, dInfo.data(), bc));
+
+    // terminate logging and print profile results
+    rocsolver_log_flush_profile();
+    rocsolver_log_end();
 
     // Solve Ax = b for x
     CHECK_ROCBLAS_ERROR(rocsolver_getrs(STRIDED, handle, rocblas_operation_none, n, nrhs, dA, lda,
@@ -175,9 +186,16 @@ void getrf_large_getError(const rocblas_handle handle,
                                      ldb, stB, &beta, dB, ldb, stB, bc));
     CHECK_HIP_ERROR(hBRes.transfer_from(dB));
 
+    // // CPU lapack
+    // for(rocblas_int b = 0; b < bc; ++b)
+    // {
+    // cpu_getrf(m, n, hA[b], lda, hIpiv[b], hInfo[b]);
+    // }
+
     double err;
     *max_err = 0;
     for(rocblas_int b = 0; b < bc; ++b)
+    // index[j]
     { // Pass the matrices here
         err = norm_error('F', n, nrhs, ldb, hB[b], hBRes[b]);
         *max_err = err > *max_err ? err : *max_err;

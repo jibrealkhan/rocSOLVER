@@ -675,7 +675,7 @@ rocblas_int rocsolver_trsm_blksize(const rocblas_int m, const rocblas_int n)
         blk = size[get_index(intervalsM, M, m)][get_index(intervalsN, N, n)];
     }
 
-    if(blk == 1)
+    if(blk <= 1)
         blk = std::min(m, 512);
 
     return blk;
@@ -706,7 +706,7 @@ rocblas_int rocsolver_trsm_blksize(const rocblas_int m, const rocblas_int n)
         blk = size[get_index(intervalsM, M, m)][get_index(intervalsN, N, n)];
     }
 
-    if(blk == 1)
+    if(blk <= 1)
         blk = std::min(m, 512);
 
     return blk;

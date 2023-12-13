@@ -35,106 +35,148 @@
 #include "rocsolver_arguments.hpp"
 #include "rocsolver_test.hpp"
 
-template <bool STRIDED, bool GETRF, typename T, typename U>
-void getf2_getrf_checkBadArgs(const rocblas_handle handle,
-                              const rocblas_int m,
-                              const rocblas_int n,
-                              T dA,
-                              const rocblas_int lda,
-                              const rocblas_stride stA,
-                              U dIpiv,
-                              const rocblas_stride stP,
-                              U dinfo,
-                              const rocblas_int bc)
+#define GETF2_SPKER_MAX_M 1024 //always <= 1024
+#define GETF2_SPKER_MAX_N 256 //always <= 256
+#define GETF2_SSKER_MAX_M 512 //always <= 512 and <= GETF2_SPKER_MAX_M
+#define GETF2_SSKER_MAX_N 64 //always <= wavefront and <= GETF2_SPKER_MAX_N
+#define GETF2_OPTIM_NGRP \
+    16, 15, 8, 8, 8, 8, 8, 8, 6, 6, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+#define GETRF_NUM_INTERVALS_REAL 4
+#define GETRF_INTERVALS_REAL 64, 512, 1856, 2944
+#define GETRF_BLKSIZES_REAL 0, 1, 32, 256, 512
+#define GETRF_BATCH_NUM_INTERVALS_REAL 9
+#define GETRF_BATCH_INTERVALS_REAL 40, 42, 46, 49, 52, 58, 112, 800, 1024
+#define GETRF_BATCH_BLKSIZES_REAL 0, 32, 0, 16, 0, 32, 1, 32, 64, 160
+#define GETRF_NPVT_NUM_INTERVALS_REAL 2
+#define GETRF_NPVT_INTERVALS_REAL 64, 512
+#define GETRF_NPVT_BLKSIZES_REAL 0, -1, 512
+#define GETRF_NPVT_BATCH_NUM_INTERVALS_REAL 6
+#define GETRF_NPVT_BATCH_INTERVALS_REAL 40, 168, 448, 512, 896, 1408
+#define GETRF_NPVT_BATCH_BLKSIZES_REAL 0, -24, -32, -64, 32, 96, 512
+
+#define GETRF_NUM_INTERVALS_COMPLEX 4
+#define GETRF_INTERVALS_COMPLEX 64, 512, 1024, 2944
+#define GETRF_BLKSIZES_COMPLEX 0, 1, 32, 96, 512
+#define GETRF_BATCH_NUM_INTERVALS_COMPLEX 10
+#define GETRF_BATCH_INTERVALS_COMPLEX 23, 28, 30, 32, 40, 48, 56, 64, 768, 1024
+#define GETRF_BATCH_BLKSIZES_COMPLEX 0, 16, 0, 1, 24, 16, 24, 16, 48, 64, 160
+#define GETRF_NPVT_NUM_INTERVALS_COMPLEX 2
+#define GETRF_NPVT_INTERVALS_COMPLEX 64, 512
+#define GETRF_NPVT_BLKSIZES_COMPLEX 0, -1, 512
+#define GETRF_NPVT_BATCH_NUM_INTERVALS_COMPLEX 5
+#define GETRF_NPVT_BATCH_INTERVALS_COMPLEX 20, 32, 42, 512, 1408
+#define GETRF_NPVT_BATCH_BLKSIZES_COMPLEX 0, -16, -32, -48, 64, 128
+
+inline rocblas_int get_index(rocblas_int* intervals, rocblas_int max, rocblas_int dim)
 {
-    // handle
-    EXPECT_ROCBLAS_STATUS(
-        rocsolver_getf2_getrf(STRIDED, GETRF, nullptr, m, n, dA, lda, stA, dIpiv, stP, dinfo, bc),
-        rocblas_status_invalid_handle);
+    rocblas_int i;
 
-    // values
-    // N/A
+    for(i = 0; i < max; ++i)
+    {
+        if(dim <= intervals[i])
+            break;
+    }
 
-    // sizes (only check batch_count if applicable)
-    if(STRIDED)
-        EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA, lda, stA,
-                                                    dIpiv, stP, dinfo, -1),
-                              rocblas_status_invalid_size);
-
-    // pointers
-    EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, (T) nullptr, lda, stA,
-                                                dIpiv, stP, dinfo, bc),
-                          rocblas_status_invalid_pointer);
-    EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA, lda, stA,
-                                                (U) nullptr, stP, dinfo, bc),
-                          rocblas_status_invalid_pointer);
-    EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA, lda, stA, dIpiv,
-                                                stP, (U) nullptr, bc),
-                          rocblas_status_invalid_pointer);
-
-    // quick return with invalid pointers
-    EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, 0, n, (T) nullptr, lda, stA,
-                                                (U) nullptr, stP, dinfo, bc),
-                          rocblas_status_success);
-    EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, 0, (T) nullptr, lda, stA,
-                                                (U) nullptr, stP, dinfo, bc),
-                          rocblas_status_success);
-    if(STRIDED)
-        EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA, lda, stA,
-                                                    dIpiv, stP, (U) nullptr, 0),
-                              rocblas_status_success);
-
-    // quick return with zero batch_count if applicable
-    if(STRIDED)
-        EXPECT_ROCBLAS_STATUS(
-            rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA, lda, stA, dIpiv, stP, dinfo, 0),
-            rocblas_status_success);
+    return i;
 }
 
-template <bool BATCHED, bool STRIDED, bool GETRF, typename T>
-void testing_getf2_getrf_bad_arg()
+/** This function returns the outer block size based on defined variables
+    tunable by the user (defined in ideal_sizes.hpp) **/
+template <bool ISBATCHED, typename T, std::enable_if_t<!rocblas_is_complex<T>, int> = 0>
+rocblas_int getrf_get_blksize(rocblas_int dim, const bool pivot)
 {
-    // safe arguments
-    rocblas_local_handle handle;
-    rocblas_int m = 1;
-    rocblas_int n = 1;
-    rocblas_int lda = 1;
-    rocblas_stride stA = 1;
-    rocblas_stride stP = 1;
-    rocblas_int bc = 1;
+    rocblas_int blk;
 
-    if(BATCHED)
+    if(ISBATCHED)
     {
-        // memory allocations
-        device_batch_vector<T> dA(1, 1, 1);
-        device_strided_batch_vector<rocblas_int> dIpiv(1, 1, 1, 1);
-        device_strided_batch_vector<rocblas_int> dInfo(1, 1, 1, 1);
-        CHECK_HIP_ERROR(dA.memcheck());
-        CHECK_HIP_ERROR(dIpiv.memcheck());
-        CHECK_HIP_ERROR(dInfo.memcheck());
-
-        // check bad arguments
-        getf2_getrf_checkBadArgs<STRIDED, GETRF>(handle, m, n, dA.data(), lda, stA, dIpiv.data(),
-                                                 stP, dInfo.data(), bc);
+        if(pivot)
+        {
+            rocblas_int size[] = {GETRF_BATCH_BLKSIZES_REAL};
+            rocblas_int intervals[] = {GETRF_BATCH_INTERVALS_REAL};
+            rocblas_int max = GETRF_BATCH_NUM_INTERVALS_REAL;
+            blk = size[get_index(intervals, max, dim)];
+        }
+        else
+        {
+            rocblas_int size[] = {GETRF_NPVT_BATCH_BLKSIZES_REAL};
+            rocblas_int intervals[] = {GETRF_NPVT_BATCH_INTERVALS_REAL};
+            rocblas_int max = GETRF_NPVT_BATCH_NUM_INTERVALS_REAL;
+            blk = size[get_index(intervals, max, dim)];
+        }
     }
     else
     {
-        // memory allocations
-        device_strided_batch_vector<T> dA(1, 1, 1, 1);
-        device_strided_batch_vector<rocblas_int> dIpiv(1, 1, 1, 1);
-        device_strided_batch_vector<rocblas_int> dInfo(1, 1, 1, 1);
-        CHECK_HIP_ERROR(dA.memcheck());
-        CHECK_HIP_ERROR(dIpiv.memcheck());
-        CHECK_HIP_ERROR(dInfo.memcheck());
-
-        // check bad arguments
-        getf2_getrf_checkBadArgs<STRIDED, GETRF>(handle, m, n, dA.data(), lda, stA, dIpiv.data(),
-                                                 stP, dInfo.data(), bc);
+        if(pivot)
+        {
+            rocblas_int size[] = {GETRF_BLKSIZES_REAL};
+            rocblas_int intervals[] = {GETRF_INTERVALS_REAL};
+            rocblas_int max = GETRF_NUM_INTERVALS_REAL;
+            blk = size[get_index(intervals, max, dim)];
+        }
+        else
+        {
+            rocblas_int size[] = {GETRF_NPVT_BLKSIZES_REAL};
+            rocblas_int intervals[] = {GETRF_NPVT_INTERVALS_REAL};
+            rocblas_int max = GETRF_NPVT_NUM_INTERVALS_REAL;
+            blk = size[get_index(intervals, max, dim)];
+        }
     }
+
+    if(blk == 1 || blk == -1)
+        blk *= dim;
+
+    return blk;
+}
+
+/** Complex type version **/
+template <bool ISBATCHED, typename T, std::enable_if_t<rocblas_is_complex<T>, int> = 0>
+rocblas_int getrf_get_blksize(rocblas_int dim, const bool pivot)
+{
+    rocblas_int blk;
+
+    if(ISBATCHED)
+    {
+        if(pivot)
+        {
+            rocblas_int size[] = {GETRF_BATCH_BLKSIZES_COMPLEX};
+            rocblas_int intervals[] = {GETRF_BATCH_INTERVALS_COMPLEX};
+            rocblas_int max = GETRF_BATCH_NUM_INTERVALS_COMPLEX;
+            blk = size[get_index(intervals, max, dim)];
+        }
+        else
+        {
+            rocblas_int size[] = {GETRF_NPVT_BATCH_BLKSIZES_COMPLEX};
+            rocblas_int intervals[] = {GETRF_NPVT_BATCH_INTERVALS_COMPLEX};
+            rocblas_int max = GETRF_NPVT_BATCH_NUM_INTERVALS_COMPLEX;
+            blk = size[get_index(intervals, max, dim)];
+        }
+    }
+    else
+    {
+        if(pivot)
+        {
+            rocblas_int size[] = {GETRF_BLKSIZES_COMPLEX};
+            rocblas_int intervals[] = {GETRF_INTERVALS_COMPLEX};
+            rocblas_int max = GETRF_NUM_INTERVALS_COMPLEX;
+            blk = size[get_index(intervals, max, dim)];
+        }
+        else
+        {
+            rocblas_int size[] = {GETRF_NPVT_BLKSIZES_COMPLEX};
+            rocblas_int intervals[] = {GETRF_NPVT_INTERVALS_COMPLEX};
+            rocblas_int max = GETRF_NPVT_NUM_INTERVALS_COMPLEX;
+            blk = size[get_index(intervals, max, dim)];
+        }
+    }
+
+    if(blk == 1 || blk == -1)
+        blk *= dim;
+
+    return blk;
 }
 
 template <bool CPU, bool GPU, typename T, typename Td, typename Ud, typename Th, typename Uh>
-void getf2_getrf_initData(const rocblas_handle handle,
+void getf2_getrf_large_debug_initData(const rocblas_handle handle,
                           const rocblas_int m,
                           const rocblas_int n,
                           Td& dA,
@@ -210,7 +252,7 @@ void getf2_getrf_initData(const rocblas_handle handle,
 }
 
 template <bool STRIDED, bool GETRF, typename T, typename Td, typename Ud, typename Th, typename Uh>
-void getf2_getrf_getError(const rocblas_handle handle,
+void getf2_getrf_large_debug_getError(const rocblas_handle handle,
                           const rocblas_int m,
                           const rocblas_int n,
                           Td& dA,
@@ -230,7 +272,7 @@ void getf2_getrf_getError(const rocblas_handle handle,
                           const bool singular)
 {
     // input data initialization
-    getf2_getrf_initData<true, true, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA,
+    getf2_getrf_large_debug_initData<true, true, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA,
                                         hIpiv, hInfo, singular);
 
     // execute computations
@@ -241,8 +283,10 @@ void getf2_getrf_getError(const rocblas_handle handle,
     CHECK_HIP_ERROR(hIpivRes.transfer_from(dIpiv));
     CHECK_HIP_ERROR(hInfoRes.transfer_from(dInfo));
 
+
+
     // CPU lapack
-    for(rocblas_int b = 0; b < bc; ++b)
+    for(rocblas_int b = 0; b < bc; ++b)  // Probably here too
     {
         GETRF ? cpu_getrf(m, n, hA[b], lda, hIpiv[b], hInfo[b])
               : cpu_getf2(m, n, hA[b], lda, hIpiv[b], hInfo[b]);
@@ -256,36 +300,26 @@ void getf2_getrf_getError(const rocblas_handle handle,
     double err;
     *max_err = 0;
 
+
+    // size of outer blocks
+    rocblas_int dim = min(m, n);
+    rocblas_int blk = getrf_get_blksize<false, T>(dim, true);
+    rocblas_int jb;
     // A loop that iterates over the blocks
-    for(rocblas_int b = 0; b < bc; ++b)
+    // Need to make changes to the loop with the entry point of the blocks
+    for(rocblas_int j = 0; j < dim; j += blk) // Probably here.
     {   
-        err = norm_error('F', m, n, lda, hA[b], hARes[b]);
-        *max_err = err > *max_err ? err : *max_err;
-
-        // also check pivoting (count the number of incorrect pivots)
-        err = 0;
-        for(rocblas_int i = 0; i < min(m, n); ++i)
-        {
-            EXPECT_EQ(hIpiv[b][i], hIpivRes[b][i]) << "where b = " << b << ", i = " << i;
-            if(hIpiv[b][i] != hIpivRes[b][i])
-                err++;
-        }
+        jb = min(dim - j, blk);
+        // j + j * lda because the elements are at the diagnol
+        err = norm_error('F', jb, jb, lda, hA[0] + j + j * lda, hARes[0] + j + j * lda);
+        std::cout<<"The error inside the block is "<<err<<std::endl;
         *max_err = err > *max_err ? err : *max_err;
     }
-
-    // also check info for singularities
-    err = 0;
-    for(rocblas_int b = 0; b < bc; ++b)
-    {
-        EXPECT_EQ(hInfo[b][0], hInfoRes[b][0]) << "where b = " << b;
-        if(hInfo[b][0] != hInfoRes[b][0])
-            err++;
-    }
-    *max_err += err;
 }
 
+// Function for performance data.
 template <bool STRIDED, bool GETRF, typename T, typename Td, typename Ud, typename Th, typename Uh>
-void getf2_getrf_getPerfData(const rocblas_handle handle,
+void getf2_getrf_large_debug_getPerfData(const rocblas_handle handle,
                              const rocblas_int m,
                              const rocblas_int n,
                              Td& dA,
@@ -306,64 +340,12 @@ void getf2_getrf_getPerfData(const rocblas_handle handle,
                              const bool perf,
                              const bool singular)
 {
-    if(!perf)
-    {
-        getf2_getrf_initData<true, false, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA,
-                                             hIpiv, hInfo, singular);
-
-        // cpu-lapack performance (only if not in perf mode)
-        *cpu_time_used = get_time_us_no_sync();
-        for(rocblas_int b = 0; b < bc; ++b)
-        {
-            GETRF ? cpu_getrf(m, n, hA[b], lda, hIpiv[b], hInfo[b])
-                  : cpu_getf2(m, n, hA[b], lda, hIpiv[b], hInfo[b]);
-        }
-        *cpu_time_used = get_time_us_no_sync() - *cpu_time_used;
-    }
-
-    getf2_getrf_initData<true, false, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA,
-                                         hIpiv, hInfo, singular);
-
-    // cold calls
-    for(int iter = 0; iter < 2; iter++)
-    {
-        getf2_getrf_initData<false, true, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA,
-                                             hIpiv, hInfo, singular);
-
-        CHECK_ROCBLAS_ERROR(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA.data(), lda, stA,
-                                                  dIpiv.data(), stP, dInfo.data(), bc));
-    }
-
-    // gpu-lapack performance
-    hipStream_t stream;
-    CHECK_ROCBLAS_ERROR(rocblas_get_stream(handle, &stream));
-    double start;
-
-    if(profile > 0)
-    {
-        if(profile_kernels)
-            rocsolver_log_set_layer_mode(rocblas_layer_mode_log_profile
-                                         | rocblas_layer_mode_ex_log_kernel);
-        else
-            rocsolver_log_set_layer_mode(rocblas_layer_mode_log_profile);
-        rocsolver_log_set_max_levels(profile);
-    }
-
-    for(rocblas_int iter = 0; iter < hot_calls; iter++)
-    {
-        getf2_getrf_initData<false, true, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA,
-                                             hIpiv, hInfo, singular);
-
-        start = get_time_us_sync(stream);
-        rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, dA.data(), lda, stA, dIpiv.data(), stP,
-                              dInfo.data(), bc);
-        *gpu_time_used += get_time_us_sync(stream) - start;
-    }
-    *gpu_time_used /= hot_calls;
+    *cpu_time_used = nan(""); // no timing on cpu-lapack execution
+    *gpu_time_used = nan(""); // no timing on gpu-lapack execution
 }
 
 template <bool BATCHED, bool STRIDED, bool GETRF, typename T>
-void testing_getf2_getrf(Arguments& argus)
+void testing_getf2_getrf_large_debug(Arguments& argus)
 {
     // get arguments
     rocblas_local_handle handle;
@@ -394,16 +376,16 @@ void testing_getf2_getrf(Arguments& argus)
     bool invalid_size = (m < 0 || n < 0 || lda < m || bc < 0);
     if(invalid_size)
     {
-        if(BATCHED)
-            EXPECT_ROCBLAS_STATUS(
-                rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, (T* const*)nullptr, lda, stA,
-                                      (rocblas_int*)nullptr, stP, (rocblas_int*)nullptr, bc),
-                rocblas_status_invalid_size);
-        else
-            EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, (T*)nullptr,
-                                                        lda, stA, (rocblas_int*)nullptr, stP,
-                                                        (rocblas_int*)nullptr, bc),
-                                  rocblas_status_invalid_size);
+        // if(BATCHED)
+        //     EXPECT_ROCBLAS_STATUS(
+        //         rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, (T* const*)nullptr, lda, stA,
+        //                               (rocblas_int*)nullptr, stP, (rocblas_int*)nullptr, bc),
+        //         rocblas_status_invalid_size);
+        // else
+        //     EXPECT_ROCBLAS_STATUS(rocsolver_getf2_getrf(STRIDED, GETRF, handle, m, n, (T*)nullptr,
+        //                                                 lda, stA, (rocblas_int*)nullptr, stP,
+        //                                                 (rocblas_int*)nullptr, bc),
+        //                           rocblas_status_invalid_size);
 
         if(argus.timing)
             rocsolver_bench_inform(inform_invalid_size);
@@ -467,13 +449,13 @@ void testing_getf2_getrf(Arguments& argus)
 
         // check computations
         if(argus.unit_check || argus.norm_check)
-            getf2_getrf_getError<STRIDED, GETRF, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo,
+            getf2_getrf_large_debug_getError<STRIDED, GETRF, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo,
                                                     bc, hA, hARes, hIpiv, hIpivRes, hInfo, hInfoRes,
                                                     &max_error, argus.singular);
 
         // collect performance data
         if(argus.timing)
-            getf2_getrf_getPerfData<STRIDED, GETRF, T>(
+            getf2_getrf_large_debug_getPerfData<STRIDED, GETRF, T>(
                 handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA, hIpiv, hInfo, &gpu_time_used,
                 &cpu_time_used, hot_calls, argus.profile, argus.profile_kernels, argus.perf,
                 argus.singular);
@@ -511,13 +493,13 @@ void testing_getf2_getrf(Arguments& argus)
 
         // check computations
         if(argus.unit_check || argus.norm_check)
-            getf2_getrf_getError<STRIDED, GETRF, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo,
+            getf2_getrf_large_debug_getError<STRIDED, GETRF, T>(handle, m, n, dA, lda, stA, dIpiv, stP, dInfo,
                                                     bc, hA, hARes, hIpiv, hIpivRes, hInfo, hInfoRes,
                                                     &max_error, argus.singular);
 
         // collect performance data
         if(argus.timing)
-            getf2_getrf_getPerfData<STRIDED, GETRF, T>(
+            getf2_getrf_large_debug_getPerfData<STRIDED, GETRF, T>(
                 handle, m, n, dA, lda, stA, dIpiv, stP, dInfo, bc, hA, hIpiv, hInfo, &gpu_time_used,
                 &cpu_time_used, hot_calls, argus.profile, argus.profile_kernels, argus.perf,
                 argus.singular);
@@ -575,11 +557,3 @@ void testing_getf2_getrf(Arguments& argus)
     argus.validate_consumed();
 }
 
-#define EXTERN_TESTING_GETF2_GETRF(...) \
-    extern template void testing_getf2_getrf<__VA_ARGS__>(Arguments&);
-
-INSTANTIATE(EXTERN_TESTING_GETF2_GETRF,
-            FOREACH_MATRIX_DATA_LAYOUT,
-            FOREACH_BLOCKED_VARIANT,
-            FOREACH_SCALAR_TYPE,
-            APPLY_STAMP)

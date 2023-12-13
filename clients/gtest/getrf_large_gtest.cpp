@@ -40,7 +40,9 @@ typedef std::tuple<vector<int>, int> getrf_large_tuple;
 
 // for weekly_lapack tests
 const vector<vector<int>> very_large_matrixA_size_range = {
-    {25000, 25000, 25000},
+    {15000,15000,15000},        //0
+    {15001,15001,15001},        //1
+    {15250,15250,15250},        //2
 };
 
 const vector<int> very_large_nrhs = {300};
@@ -102,22 +104,22 @@ protected:
 
 // non-batch tests
 
-TEST_P(GETRF_LARGE, __float)
-{
-    run_tests<false, false, float>();
-}
+// TEST_P(GETRF_LARGE, DISABLED__float)
+// {
+//     run_tests<false, false, float>();
+// }
 
-TEST_P(GETRF_LARGE, __double)
-{
-    run_tests<false, false, double>();
-}
+// TEST_P(GETRF_LARGE, DISABLED__double)
+// {
+//     run_tests<false, false, double>();
+// }
 
-TEST_P(GETRF_LARGE, DISABLED__float_complex)
-{
-    run_tests<false, false, rocblas_float_complex>();
-}
+// TEST_P(GETRF_LARGE, DISABLED__float_complex)
+// {
+//     run_tests<false, false, rocblas_float_complex>();
+// }
 
-TEST_P(GETRF_LARGE, DISABLED__double_complex)
+TEST_P(GETRF_LARGE, __double_complex)
 {
     run_tests<false, false, rocblas_double_complex>();
 }

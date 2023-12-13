@@ -42,6 +42,7 @@ set(roclapack_test_source
   # triangular factorizations
   getf2_getrf_gtest.cpp
   getrf_large_gtest.cpp
+  getrf_large_debug_gtest.cpp
   potf2_potrf_gtest.cpp
   sytf2_sytrf_gtest.cpp
   geblttrf_gtest.cpp
